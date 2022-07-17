@@ -48,11 +48,39 @@ using namespace cv;
   int moves_counter;
   int border_color_start;
   int border_color_end;
-  int border_color_hide;
-  string info_msg = "space --> again, any key --> end";
-  string gameWindowName = "puzzle15";
+  int border_color_hide;  
+  
   int hardness;     //hardness degree
+  int background_off = 0;
+  int language = 0;  //0 - eng, 1 - pl  
+  string info_1[] = {
+    "[space] -> again, [esc] -> end  | move: ",
+    "[spacja] -> od nowa [esc] -> koniec |Ruch:"
+  };
+  string info_2[] = {
+    "PUZZLE SOLVED  ([space] - again, [esc] - end)",
+    "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [esc] -> zakoncz)"
+  };  
+  string info_3[] = {
+    "can't make a move over several fields",
+    "nie mozna wykonac ruchu przez kilka pól"
+  };  
+  string info_4[] = {
+    "can't make a move!", 
+    "nie moge wykonac ruchu"
+  };
+  string info_5[] = {
+    "... point into window and press any key to end puzzle15",
+    "... kliknij w okno ukladanki i nacisnij [esc] zeby zakonczyc"
+  };
+  string info_6[] = {
+    "can't open puzzle image", 
+    "nie moge otworzyc obrazka"
+  };
+
+  string gameWindowName = "puzzle15";
   bool is_puzzle_solved;
+  
   #ifdef DEBUG_T15
   string debugWindow = "debugWindow";
   #endif // DEBUG_T15
@@ -98,7 +126,9 @@ void pasteMat2Mat(const Mat &src, const Rect &roi, Mat& dst){
 
 
 void create_current_state(){
+  #ifdef DEBUG_T15
   cout << "create_current_state()" << endl;
+  #endif // DEBUG_T15
   pasteMat2Mat(
     background, 
     Rect(0,0,img.rows, img.cols), 
@@ -145,8 +175,9 @@ bool check_if_puzzle_solved(){
 void swap_tile(int r1, int c1, int r2, int c2){
   CV_Assert(tiles15[r2][c2].empty == true);
   CV_Assert(tiles15[r1][c1].empty == false);
-
+  #ifdef DEBUG_T15
   cout << "swaping tiles[" << r1 << "," << c1 << "] <-> tiles[" << r2 << "," << c2 << "]" << endl;
+  #endif // DEBUG_T15
   tiles15[r1][c1].empty = true;
   tiles15[r2][c2].empty = false;
   empty_row = r1;
@@ -184,7 +215,9 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
     //locate the end tile
     int col_end = move_end.x / tile_width;
     int row_end = move_end.y / tile_height;
+    #ifdef DEBUG_T15
     cout << "click B - UP tile : [row,col] : [" << row_end << "," << col_end << "]" << endl;
+    #endif //DEBUG_T15
 
     //check if end tile is empty
     if(tiles15[row_end][col_end].empty){    
@@ -204,23 +237,23 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
         tile_border(row_start, col_start, border_color_start);
         moves_counter++;      
         swap_tile(row_start, col_start, row_end, col_end);
-        setWindowTitle(gameWindowName, info_msg + " moves:" + to_string(moves_counter));
+        setWindowTitle(gameWindowName, info_1[language] + to_string(moves_counter));
         create_current_state();
         imshow(gameWindowName, current_state);
       }
       else {
-        cout << "can't make a move over several fields" << endl;
+        cout << info_3[language] << endl;
+        
       }                  
     }
     else {
-      cout << "can't make a move!" << endl;
+      cout << info_4[language] << endl;
     }            
   }
   check_if_puzzle_solved();
-  if(is_puzzle_solved){
-    string msg = "puzzle solved - space -> play again, any other key -> end";
-    cout << endl << msg << endl;
-    setWindowTitle(gameWindowName, msg);
+  if(is_puzzle_solved){    
+    cout << endl << info_2[language] << endl;
+    setWindowTitle(gameWindowName, info_2[language]);
   }
 }
 
@@ -303,6 +336,8 @@ int main(int argc, char **argv){
   {help --help -h || this message}\
   {@img | 15.png | puzzle image}\
   {@hardness | 15 | difficulty level}\
+  {@language | 0 | message language (0 = eng, 1 = pl)}\
+  {@background_off | 0 | background: turn off = 1, turn on = 0}\
   ");
   if(cmd_parser.has("help")){
     cmd_parser.printMessage();
@@ -311,7 +346,7 @@ int main(int argc, char **argv){
   try{
     img = imread(cmd_parser.get<string>("@img"), IMREAD_UNCHANGED);
     if(img.empty()){
-      cerr << endl << "can't open puzzle image" << endl;      
+      cerr << endl << info_6[language] << endl;      
     }
   }
   catch(...){
@@ -319,6 +354,9 @@ int main(int argc, char **argv){
     return EXIT_FAILURE;
   }
   hardness = cmd_parser.get<int>("@hardness");  
+  language = cmd_parser.get<int>("@language");
+  background_off = cmd_parser.get<int>("@background_off");
+  if(language != 0 && language != 1) language = 1;
   #ifdef DEBUG_T15
   cout << "hardness: " << hardness << endl;
   namedWindow(debugWindow);
@@ -335,27 +373,30 @@ int main(int argc, char **argv){
   reset_tiles();  
   
   //shadowing background
-  background = img.clone();  
+  if(background_off){
+    background = Mat::ones(img.size(), img.type());
+    background += 200;
+  }
+  else {
+    background = img.clone();  
+  }
   background += Scalar(-100, -100, -100);
   
   create_current_state();
-  
-  //game start
-  cout << endl << "... point into window and press any key to end puzzle15" << endl;    
-  namedWindow(gameWindowName);
-  setWindowTitle(gameWindowName, info_msg);
+    
+  namedWindow(gameWindowName);  
   setMouseCallback(gameWindowName, moveTile);
   int key = 0;
-  while(key == 0){
+
+  //game start
+  cout << endl << info_5[language] << endl;  
+
+  while(key != 27){
     //restoring beginning state
-    //tiles15[empty_row][empty_col].empty = false;
-    
-    
+            
     reset_tiles();  
-    //TODO: remove this
-    // for(int w = 0; w < tile_height_n; w++)
-    //   for(int c = 0; c < tile_width_n; c++)
-    //     tiles15[w][c].empty = false;    
+    setWindowTitle(gameWindowName, info_1[language]);
+    
     moves_counter = 0;
     clear_rejestr(move_backward_rejestr);
     clear_rejestr(move_user_history);
@@ -370,10 +411,12 @@ int main(int argc, char **argv){
     
     //show board    
     imshow(gameWindowName, current_state);
-    key = waitKey(0);
-    if(key == ' '){
-      key = 0;
-    }
+    do {
+      key = waitKey(0);
+    } while(key != ' ' && key != 27);
+    // if(key == ' '){
+    //   key = 0;
+    // }
   }
 
   return EXIT_SUCCESS;
