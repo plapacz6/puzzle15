@@ -3,29 +3,33 @@ author: plapacz6@gmail.com
 data: 2020-07-16
 ver: 0.1.0
 */
-#include <opencv2/core.hpp>
+  #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <iostream>
+#include <iomanip>
 #include <ctime>
 #include <cstdlib>
 
 using namespace std;
 using namespace cv;
 //#define DEBUG_T15
+#define T15_USE_HITORY_REJESTR
 
 //namespace my_app {
   const int tile_width_n = 4;
   const int tile_height_n = 4;
   //const int tile_size = tile_width_n * tile_height_n;
+
   struct {
     Mat t;
     Rect r;
     bool empty;
     int nr;     //original number (for checking if solved)
   } tiles15[tile_height_n][tile_width_n];
+
   Mat img;
   Mat background;
   Mat current_state;  
@@ -35,16 +39,37 @@ using namespace cv;
   int tile_height;
   int empty_row;
   int empty_col;  
+
+  #ifdef T15_USE_HITORY_REJESTR
   struct move_rejestr_entry_t {    
     int rs;
     int cs;
     int re;
     int ce;
+    move_rejestr_entry_t(){      
+    }
     move_rejestr_entry_t(int rs_, int cs_, int re_, int ce_): 
-      rs(rs_), cs(cs_), re(re_), ce(ce_) {}
+      rs(rs_), cs(cs_), re(re_), ce(ce_) {      
+      }
+    move_rejestr_entry_t(move_rejestr_entry_t&& o){      
+      rs = o.rs;
+      cs = o.cs;
+      re = o.re;
+      ce = o.ce;
+    }
+    move_rejestr_entry_t(move_rejestr_entry_t& o){      
+      rs = move(o.rs);
+      cs = move(o.cs);
+      re = move(o.re);
+      ce = move(o.ce);
+    }    
+    ~move_rejestr_entry_t(){      
+    }
   };
   vector<move_rejestr_entry_t> move_backward_rejestr;
   vector<move_rejestr_entry_t> move_user_history;
+  #endif // T15_USE_HITORY_REJESTR  
+
   int moves_counter;
   int border_color_start;
   int border_color_end;
@@ -58,8 +83,13 @@ using namespace cv;
     "[spacja] -> od nowa [esc] -> koniec |Ruch:"
   };
   string info_2[] = {
+  #ifdef T15_USE_HITORY_REJESTR
+    "PUZZLE SOLVED  ([space] - again, [h] - show history, [esc] - end)",
+    "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [h] - historia, [esc] -> zakoncz)"  
+  #else
     "PUZZLE SOLVED  ([space] - again, [esc] - end)",
-    "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [esc] -> zakoncz)"
+    "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [esc] -> zakoncz)"    
+  #endif // T15_USE_HITORY_REJESTR
   };  
   string info_3[] = {
     "can't make a move over several fields",
@@ -77,7 +107,19 @@ using namespace cv;
     "can't open puzzle image", 
     "nie moge otworzyc obrazka"
   };
-
+  
+  #ifdef T15_USE_HITORY_REJESTR
+  string info_8[] = {
+    "history of user moves: ",
+    "historia ruchów użytkownika: "
+  };
+  string info_9[] = {
+    "reverse history of move during preparing mess:",
+    "odwotna historia ruchów podczas mieszania fragmentów układanki:"
+  };
+  //bool history_printed = false;
+  #endif //T15_USE_HITORY_REJESTR  
+  
   string gameWindowName = "puzzle15";
   bool is_puzzle_solved;
   
@@ -86,9 +128,6 @@ using namespace cv;
   #endif // DEBUG_T15
 //}
 
-void clear_rejestr(vector<move_rejestr_entry_t>& rejestr){
-  //TODO
-}
 
 void tile_border(int r, int c, int color){
   //color == 0 - hide  
@@ -164,6 +203,27 @@ bool check_if_puzzle_solved(){
 }
 
 
+#ifdef T15_USE_HITORY_REJESTR
+void print_moves_history(){
+  cout << endl << info_8[language] << endl;
+  for(int i = 0; i < move_user_history.size(); i++){
+    cout  << "  [" <<  setw(2) << i << "]:" << 
+    "[" << move_user_history[i].rs + 1 << "," << move_user_history[i].cs + 1 << "] -> " << 
+    "[" << move_user_history[i].re + 1 << "," << move_user_history[i].ce + 1 << "]" << endl;
+  }
+  cout << endl << info_9[language] << endl;
+  int last_move = move_backward_rejestr.size() - 1;
+  for(int i = last_move; i >= 0; i--){
+    cout << "  [" <<  setw(2) << (last_move - i) << "]:" << 
+    "[" << move_backward_rejestr[i].re + 1 << "," << move_backward_rejestr[i].ce + 1 << "] -> " << 
+    "[" << move_backward_rejestr[i].rs + 1 << "," << move_backward_rejestr[i].cs + 1 << "]" << endl;
+    
+  }
+  //history_printed = true;
+}
+#endif// T15_USE_HITORY_REJESTR
+
+
 /**
  * @brief swap content of 2 tiles
  * 
@@ -237,8 +297,11 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
         tile_border(row_start, col_start, border_color_start);
         moves_counter++;      
         swap_tile(row_start, col_start, row_end, col_end);
+        #ifdef T15_USE_HITORY_REJESTR
+        move_user_history.emplace_back(move_rejestr_entry_t(row_start, col_start, row_end, col_end));
+        #endif // T15_USE_HITORY_REJESTR
         setWindowTitle(gameWindowName, info_1[language] + to_string(moves_counter));
-        create_current_state();
+        create_current_state();        
         imshow(gameWindowName, current_state);
       }
       else {
@@ -253,6 +316,7 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
   check_if_puzzle_solved();
   if(is_puzzle_solved){    
     cout << endl << info_2[language] << endl;
+    
     setWindowTitle(gameWindowName, info_2[language]);
   }
 }
@@ -264,15 +328,23 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
  */
 void make_mess_on_board(){
   //15 moves making mess on board
+  #ifdef T15_USE_HITORY_REJESTR
+  move_backward_rejestr.clear();
+  #endif // T15_USE_HITORY_REJESTR  
   int prev_direction = 5;
   for(int i = 0; i < hardness; i++){
     int direction = rand() % 4;
     switch(direction) {
       case 0:{  //from up  to empty tile
         if(empty_row > 0 && empty_row <= 3 && prev_direction != 1){          
+          #ifdef T15_USE_HITORY_REJESTR
+          /*history recording must be before swap_tile, 
+          because swap_tile change global variables empty_row, empty_col*/
+          move_backward_rejestr.emplace_back(move_rejestr_entry_t(
+            empty_row - 1, empty_col, empty_row, empty_col));
+          #endif // T15_USE_HITORY_REJESTR            
           swap_tile(empty_row - 1, empty_col, empty_row, empty_col);                    
           prev_direction = direction;
-          //move_backward_rejestr.emplace_back(move_rejestr_entry_t(empty_row -1, empty_col, empty_row, emplty_col));
         }
         else{
           i--;
@@ -281,8 +353,12 @@ void make_mess_on_board(){
       }
       case 1:{  //from down
         if(empty_row < 3 && empty_row >= 0 && prev_direction != 0){
+          #ifdef T15_USE_HITORY_REJESTR
+          move_backward_rejestr.emplace_back(move_rejestr_entry_t(
+            empty_row + 1, empty_col, empty_row, empty_col));   
+          #endif // T15_USE_HITORY_REJESTR            
           swap_tile(empty_row + 1, empty_col, empty_row, empty_col);
-          prev_direction = direction;          
+          prev_direction = direction;       
         }
         else {
           i--;
@@ -291,6 +367,10 @@ void make_mess_on_board(){
       }
       case 2:{  //from left
         if(empty_col > 0 && empty_col <= 3 && prev_direction != 3){
+          #ifdef T15_USE_HITORY_REJESTR
+          move_backward_rejestr.emplace_back(move_rejestr_entry_t(
+            empty_row, empty_col - 1, empty_row, empty_col));
+          #endif // T15_USE_HITORY_REJESTR            
           swap_tile(empty_row, empty_col - 1, empty_row, empty_col);
           prev_direction = direction;
         }
@@ -301,6 +381,10 @@ void make_mess_on_board(){
       }
       case 3:{  //from right
         if(empty_col < 3 && empty_col >= 0 && prev_direction != 2){
+          #ifdef T15_USE_HITORY_REJESTR
+          move_backward_rejestr.emplace_back(move_rejestr_entry_t(
+            empty_row, empty_col + 1, empty_row, empty_col));
+          #endif// T15_USE_HITORY_REJESTR
           swap_tile(empty_row, empty_col + 1, empty_row, empty_col);
           prev_direction = direction;          
         }
@@ -339,10 +423,10 @@ void reset_tiles(){
 int main(int argc, char **argv){
   CommandLineParser cmd_parser(argc, argv,\
   "\
-  {help --help -h || this message}\
-  {@img | 15.png | puzzle image}\
+  {help h || this message}\
+  {@img | puzzle15p.jpg | puzzle image}\
   {@hardness | 15 | difficulty level}\
-  {@language | 0 | message language (0 = eng, 1 = pl)}\
+  {@language | 0 | messages language (0 = eng, 1 = pl)}\
   {@background_off | 0 | background: turn off = 1, turn on = 0}\
   ");
   if(cmd_parser.has("help")){
@@ -355,6 +439,10 @@ int main(int argc, char **argv){
       cerr << endl << info_6[language] << endl;      
     }
   }
+  catch(cv::Exception){
+    cmd_parser.printMessage();
+    return EXIT_FAILURE;    
+  }
   catch(...){
     cmd_parser.printMessage();
     return EXIT_FAILURE;
@@ -362,11 +450,18 @@ int main(int argc, char **argv){
   hardness = cmd_parser.get<int>("@hardness");  
   language = cmd_parser.get<int>("@language");
   background_off = cmd_parser.get<int>("@background_off");
-  if(language != 0 && language != 1) language = 1;
+  if(language != 0 && language != 1) language = 1;  
+
+  #ifdef T15_USE_HITORY_REJESTR
+  move_backward_rejestr.resize(hardness + 2);
+  move_user_history.resize(hardness * 1.5);
+  #endif // T15_USE_HITORY_REJESTR
+  
   #ifdef DEBUG_T15
   cout << "hardness: " << hardness << endl;
   namedWindow(debugWindow);
   #endif // DEBUG_T15
+  
   srand(time(NULL));
   
   //scaling image  
@@ -401,11 +496,14 @@ int main(int argc, char **argv){
     //restoring beginning state
             
     reset_tiles();  
-    setWindowTitle(gameWindowName, info_1[language]);
+    setWindowTitle(gameWindowName, info_1[language]);    
     
     moves_counter = 0;
-    clear_rejestr(move_backward_rejestr);
-    clear_rejestr(move_user_history);
+
+    #ifdef T15_USE_HITORY_REJESTR
+    //history_printed = false;
+    move_user_history.clear();    
+    #endif //T15_USE_HITORY_REJESTR
     
     //set empty tile
     empty_row = rand() % tile_height_n;
@@ -419,6 +517,13 @@ int main(int argc, char **argv){
     imshow(gameWindowName, current_state);
     do {
       key = waitKey(0);
+      #ifdef T15_USE_HITORY_REJESTR            
+      if(key == 104 || key == 72) {  // 'h' 'H'
+        //cout << "key: " << key << endl;
+        //if(!history_printed) 
+          print_moves_history();        
+      }
+      #endif // T15_USE_HITORY_REJESTR      
     } while(key != ' ' && key != 27);
     // if(key == ' '){
     //   key = 0;
