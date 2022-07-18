@@ -264,12 +264,15 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
  */
 void make_mess_on_board(){
   //15 moves making mess on board
+  int prev_direction = 5;
   for(int i = 0; i < hardness; i++){
     int direction = rand() % 4;
     switch(direction) {
       case 0:{  //from up  to empty tile
-        if(empty_row > 0 && empty_row <= 3){
+        if(empty_row > 0 && empty_row <= 3 && prev_direction != 1){          
           swap_tile(empty_row - 1, empty_col, empty_row, empty_col);                    
+          prev_direction = direction;
+          //move_backward_rejestr.emplace_back(move_rejestr_entry_t(empty_row -1, empty_col, empty_row, emplty_col));
         }
         else{
           i--;
@@ -277,8 +280,9 @@ void make_mess_on_board(){
         break;
       }
       case 1:{  //from down
-        if(empty_row < 3 && empty_row >= 0){
-          swap_tile(empty_row + 1, empty_col, empty_row, empty_col);          
+        if(empty_row < 3 && empty_row >= 0 && prev_direction != 0){
+          swap_tile(empty_row + 1, empty_col, empty_row, empty_col);
+          prev_direction = direction;          
         }
         else {
           i--;
@@ -286,8 +290,9 @@ void make_mess_on_board(){
         break;
       }
       case 2:{  //from left
-        if(empty_col > 0 && empty_col <= 3){
-          swap_tile(empty_row, empty_col - 1, empty_row, empty_col);          
+        if(empty_col > 0 && empty_col <= 3 && prev_direction != 3){
+          swap_tile(empty_row, empty_col - 1, empty_row, empty_col);
+          prev_direction = direction;
         }
         else {
           i--;
@@ -295,8 +300,9 @@ void make_mess_on_board(){
         break;
       }
       case 3:{  //from right
-        if(empty_col < 3 && empty_col >= 0){
-          swap_tile(empty_row, empty_col + 1, empty_row, empty_col);          
+        if(empty_col < 3 && empty_col >= 0 && prev_direction != 2){
+          swap_tile(empty_row, empty_col + 1, empty_row, empty_col);
+          prev_direction = direction;          
         }
         else {
           i--;
