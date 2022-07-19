@@ -8,8 +8,7 @@ then
   printf "\n"
 else
   echo  $0 $1 $2
-  export LD_LIBRARY_PATH=./lib/:$LD_LIBRARY_PATH 
-  echo $LD_LIBRARY_PATH
-  exec ./puzzle15 $*
+  export LD_LIBRARY_PATH=/usr/local/lib:./lib/:$LD_LIBRARY_PATH 
+  ./puzzle15 $*
 fi
 

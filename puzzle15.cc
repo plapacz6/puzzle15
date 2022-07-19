@@ -3,7 +3,7 @@ author: plapacz6@gmail.com
 data: 2020-07-16
 ver: 0.1.0
 */
-  #include <opencv2/core.hpp>
+#include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -16,23 +16,31 @@ ver: 0.1.0
 using namespace std;
 using namespace cv;
 //#define DEBUG_T15
-#define T15_USE_HITORY_REJESTR
+#define T15_USE_HISTORY_REJESTR
+#define T15_TILE_HIGHLIGHT
+
+#ifdef DEBUG_T15
+#define PDEBUG(X) cout << (X) << endl;
+#else
+#define PDEBUG(X) ;
+#endif
 
 //namespace my_app {
   const int tile_width_n = 4;
   const int tile_height_n = 4;
   //const int tile_size = tile_width_n * tile_height_n;
 
-  struct {
+  struct tile_t{
     Mat t;
     Rect r;
     bool empty;
     int nr;     //original number (for checking if solved)
   } tiles15[tile_height_n][tile_width_n];
 
-  Mat img;
-  Mat background;
-  Mat current_state;  
+  Mat image;  //original image
+  Mat img;    //tiles - clone of image
+  Mat background; //background - clone of image
+  Mat current_state; //wisible state of puzzle
   Mat tmp;
   Point move_start, move_end, move_over;
   int tile_width;
@@ -40,7 +48,7 @@ using namespace cv;
   int empty_row;
   int empty_col;  
 
-  #ifdef T15_USE_HITORY_REJESTR
+  #ifdef T15_USE_HISTORY_REJESTR
   struct move_rejestr_entry_t {    
     int rs;
     int cs;
@@ -68,12 +76,12 @@ using namespace cv;
   };
   vector<move_rejestr_entry_t> move_backward_rejestr;
   vector<move_rejestr_entry_t> move_user_history;
-  #endif // T15_USE_HITORY_REJESTR  
+  #endif // T15_USE_HISTORY_REJESTR  
 
   int moves_counter;
-  int border_color_start;
-  int border_color_end;
-  int border_color_hide;  
+  const int border_color_start = 1;
+  const int border_color_end = 2;
+  const int  border_color_hide = 3;
   
   int hardness;     //hardness degree
   int background_off = 0;
@@ -83,13 +91,13 @@ using namespace cv;
     "[spacja] -> od nowa [esc] -> koniec |Ruch:"
   };
   string info_2[] = {
-  #ifdef T15_USE_HITORY_REJESTR
+  #ifdef T15_USE_HISTORY_REJESTR
     "PUZZLE SOLVED  ([space] - again, [h] - show history, [esc] - end)",
     "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [h] - historia, [esc] -> zakoncz)"  
   #else
     "PUZZLE SOLVED  ([space] - again, [esc] - end)",
     "UKLADANKA UŁOZONA ([spacja] -> jesze raz, [esc] -> zakoncz)"    
-  #endif // T15_USE_HITORY_REJESTR
+  #endif // T15_USE_HISTORY_REJESTR
   };  
   string info_3[] = {
     "can't make a move over several fields",
@@ -108,7 +116,7 @@ using namespace cv;
     "nie moge otworzyc obrazka"
   };
   
-  #ifdef T15_USE_HITORY_REJESTR
+  #ifdef T15_USE_HISTORY_REJESTR
   string info_8[] = {
     "history of user moves: ",
     "historia ruchów użytkownika: "
@@ -118,7 +126,7 @@ using namespace cv;
     "odwotna historia ruchów podczas mieszania fragmentów układanki:"
   };
   //bool history_printed = false;
-  #endif //T15_USE_HITORY_REJESTR  
+  #endif //T15_USE_HISTORY_REJESTR  
   
   string gameWindowName = "puzzle15";
   bool is_puzzle_solved;
@@ -128,20 +136,7 @@ using namespace cv;
   #endif // DEBUG_T15
 //}
 
-
-void tile_border(int r, int c, int color){
-  //color == 0 - hide  
-  if(color == border_color_start) {
-    //cout << "click DOWN tile : [row,col] : [" << r << "," << c << "]" << endl;      
-  }
-  if(color == border_color_end) {
-    //cout << "click UP tile : [row,col] : [" << r << "," << c << "]" << endl;      
-  }
-  if(color == border_color_hide){
-    //cout << "click OVER tile : [row,col] : [" << r << "," << c << "]" << endl;     
-  }  
-}
-
+void moveTile(int event, int x, int y, int flags, void* userdata);
 
 void pasteMat2Mat(const Mat &src, const Rect &roi, Mat& dst){
   
@@ -164,13 +159,11 @@ void pasteMat2Mat(const Mat &src, const Rect &roi, Mat& dst){
 }
 
 
-void create_current_state(){
-  #ifdef DEBUG_T15
-  cout << "create_current_state()" << endl;
-  #endif // DEBUG_T15
+void create_current_state(){  
+  //PDEBUG("create_current_state()");
   pasteMat2Mat(
     background, 
-    Rect(0,0,img.rows, img.cols), 
+    Rect(0,0,image.rows, image.cols), 
     current_state);  
   for(int row = 0; row < tile_height_n; row++){
     for(int col = 0; col < tile_width_n; col++){
@@ -190,6 +183,57 @@ void create_current_state(){
 }
 
 
+#ifdef T15_TILE_HIGHLIGHT
+Scalar color_start = Scalar(255,0,0);
+Scalar color_end = Scalar(0,0,255); //end, warning
+Scalar color_neutral = Scalar(200,100,100);
+int line_width = 4;
+bool tile_highlight_on = true;
+
+
+inline void draw_highlight(tile_t& t, Scalar& color_) {
+  //PDEBUG("draw_highlight");
+  rectangle(
+    t.t,     
+    Point( 
+      0 + line_width
+      , 
+      0 + line_width      
+      ),
+    Point(      
+      0 + t.r.height - line_width      
+      ,       
+      0 + t.r.width - line_width
+      ),
+    color_, line_width,8,0);   
+}
+
+
+void tile_border(int r, int c, int color){
+  //PDEBUG("tile_border");  
+  if(color == border_color_start) {
+    //cout << "click DOWN tile : [row,col] : [" << r << "," << c << "]" << endl;                 
+    draw_highlight(tiles15[r][c],color_start);     
+  }
+  if(color == border_color_end) {
+    /*
+    draws a red border on tiles that you cannot move to (warning)
+    On the allowed tile it also draws, but it is not visible, 
+    so you can not see the red frame.
+    */
+    //cout << "click UP tile : [row,col] : [" << r << "," << c << "]" << endl;      
+    draw_highlight(tiles15[r][c],color_end); 
+  }
+  if(color == border_color_hide){
+    //cout << "click OVER tile : [row,col] : [" << r << "," << c << "]" << endl;     
+    draw_highlight(tiles15[r][c],color_neutral); 
+  }  
+  create_current_state();
+  imshow(gameWindowName, current_state);
+}
+#endif // T15_TILE_HIGHLIGHT
+
+
 bool check_if_puzzle_solved(){
 
   for(int w = 0; w < tile_height_n; w++)
@@ -203,7 +247,7 @@ bool check_if_puzzle_solved(){
 }
 
 
-#ifdef T15_USE_HITORY_REJESTR
+#ifdef T15_USE_HISTORY_REJESTR
 void print_moves_history(){
   cout << endl << info_8[language] << endl;
   for(int i = 0; i < move_user_history.size(); i++){
@@ -221,7 +265,7 @@ void print_moves_history(){
   }
   //history_printed = true;
 }
-#endif// T15_USE_HITORY_REJESTR
+#endif// T15_USE_HISTORY_REJESTR
 
 
 /**
@@ -253,66 +297,105 @@ void swap_tile(int r1, int c1, int r2, int c2){
 }
 
 
+bool start_lock = false;
+bool end_lock = false;
 void moveTile(int event, int x, int y, int flags, void* userdata){
+  //PDEBUG("moveTile");
   if(is_puzzle_solved) 
     return;
-  if(event == EVENT_LBUTTONDOWN){
-    move_start = Point(x,y);    
-    tile_border(y, x, border_color_start);
-  } 
-  else if(event == EVENT_MOUSEMOVE){
-    tile_border(move_over.y, move_over.x, border_color_hide);
-    move_over = Point(x,y);
-    tile_border(y, x, border_color_end);
-  }  
-  else if(event == EVENT_LBUTTONUP){
-    move_end = Point(x,y);
-    tile_border(move_over.y, move_over.x, border_color_hide);
-    tile_border(move_start.y, move_start.x, border_color_hide);
-    tile_border(move_end.y, move_end.x, border_color_hide);
+  switch(event){
+    case EVENT_LBUTTONDOWN:{
 
-    //make a move
-    //locate the end tile
-    int col_end = move_end.x / tile_width;
-    int row_end = move_end.y / tile_height;
-    #ifdef DEBUG_T15
-    cout << "click B - UP tile : [row,col] : [" << row_end << "," << col_end << "]" << endl;
-    #endif //DEBUG_T15
-
-    //check if end tile is empty
-    if(tiles15[row_end][col_end].empty){    
-      //locate the start tile
-      int col_start = move_start.x / tile_width;
-      int row_start = move_start.y / tile_height;
-      #ifdef DEBUG_T15
-      cout << "click A - DOWN tile : [row,col] : [" << row_start << "," << col_start << "]" << endl;    
-      cout << "abs r1 - r2 :"  << std::abs(row_end - row_start) << endl;
-      cout << "abs c1 - c2 :"  << std::abs(col_end - col_start) << endl;
-      #endif // DEBUG_T15
-      if(
-        (std::abs(row_end - row_start) == 1 && col_end == col_start )
-        ||
-        (row_end == row_start && std::abs(col_end - col_start) == 1)
-      ){
-        tile_border(row_start, col_start, border_color_start);
-        moves_counter++;      
-        swap_tile(row_start, col_start, row_end, col_end);
-        #ifdef T15_USE_HITORY_REJESTR
-        move_user_history.emplace_back(move_rejestr_entry_t(row_start, col_start, row_end, col_end));
-        #endif // T15_USE_HITORY_REJESTR
-        setWindowTitle(gameWindowName, info_1[language] + to_string(moves_counter));
-        create_current_state();        
-        imshow(gameWindowName, current_state);
-      }
-      else {
-        cout << info_3[language] << endl;
-        
-      }                  
+      move_start = Point(x,y);    
+      move_over = Point(x,y);
+      start_lock = true;
+      PDEBUG("moveTile - EVENT_LBUTTONDOWN");
+      #ifdef T15_TILE_HIGHLIGHT
+      if(tile_highlight_on)
+        tile_border(move_start.y / tile_height, move_start.x / tile_width, border_color_start);
+      #endif// T15_TILE_HIGHLIGHT          
+      
+      break;
     }
-    else {
-      cout << info_4[language] << endl;
-    }            
+    case EVENT_MOUSEMOVE:{
+     if(start_lock && !end_lock){    
+        PDEBUG("moveTile - EVENT_MOUSEMOVE");
+        #ifdef T15_TILE_HIGHLIGHT
+        if(tile_highlight_on)
+          if(move_over != move_start)
+            tile_border(move_over.y / tile_height, move_over.x / tile_width, border_color_hide);
+        #endif // T15_TILE_HIGHLIGHT
+        
+        move_over = Point(x,y);
+        
+        #ifdef T15_TILE_HIGHLIGHT
+        if(tile_highlight_on)
+          tile_border(move_over.y / tile_height, move_over.x / tile_width, border_color_end);
+        #endif // T15_TILE_HIGHLIGHT    
+      }
+      break;
+    }
+    case EVENT_LBUTTONUP: {
+
+      if(start_lock  && !end_lock){    
+        PDEBUG("moveTile - EVENT_LBUTTONUP");
+        end_lock = true;
+        move_end = Point(x,y);
+        
+        #ifdef T15_TILE_HIGHLIGHT
+        if(tile_highlight_on){
+          tile_border(move_over.y / tile_height, move_over.x / tile_width, border_color_hide);
+          tile_border(move_start.y / tile_height, move_start.x / tile_width, border_color_hide);
+          tile_border(move_end.y / tile_height, move_end.x / tile_width, border_color_hide);
+        }
+        #endif // T15_TILE_HIGHLIGHT
+
+        //make a move
+        //locate the end tile
+        int col_end = move_end.x / tile_width;
+        int row_end = move_end.y / tile_height;
+        #ifdef DEBUG_T15
+        cout << "click B - UP tile : [row,col] : [" << row_end << "," << col_end << "]" << endl;
+        #endif //DEBUG_T15
+
+        //check if end tile is empty
+        if(tiles15[row_end][col_end].empty){    
+          //locate the start tile
+          int col_start = move_start.x / tile_width;
+          int row_start = move_start.y / tile_height;
+          #ifdef DEBUG_T15
+          cout << "click A - DOWN tile : [row,col] : [" << row_start << "," << col_start << "]" << endl;    
+          cout << "abs r1 - r2 :"  << std::abs(row_end - row_start) << endl;
+          cout << "abs c1 - c2 :"  << std::abs(col_end - col_start) << endl;
+          #endif // DEBUG_T15
+          if(
+            (std::abs(row_end - row_start) == 1 && col_end == col_start )
+            ||
+            (row_end == row_start && std::abs(col_end - col_start) == 1)
+          ){          
+            moves_counter++;      
+            swap_tile(row_start, col_start, row_end, col_end);
+            #ifdef T15_USE_HISTORY_REJESTR
+            move_user_history.emplace_back(move_rejestr_entry_t(row_start, col_start, row_end, col_end));
+            #endif // T15_USE_HISTORY_REJESTR
+            setWindowTitle(gameWindowName, info_1[language] + to_string(moves_counter));
+            create_current_state();        
+            imshow(gameWindowName, current_state);
+          }
+          else {
+            cout << info_3[language] << endl;          
+          }                  
+        }
+        else {
+          cout << info_4[language] << endl;
+        }       
+        start_lock = false;
+        end_lock = false;  
+      }       
+      break;
+    }
   }
+
   check_if_puzzle_solved();
   if(is_puzzle_solved){    
     cout << endl << info_2[language] << endl;
@@ -328,21 +411,21 @@ void moveTile(int event, int x, int y, int flags, void* userdata){
  */
 void make_mess_on_board(){
   //15 moves making mess on board
-  #ifdef T15_USE_HITORY_REJESTR
+  #ifdef T15_USE_HISTORY_REJESTR
   move_backward_rejestr.clear();
-  #endif // T15_USE_HITORY_REJESTR  
+  #endif // T15_USE_HISTORY_REJESTR  
   int prev_direction = 5;
   for(int i = 0; i < hardness; i++){
     int direction = rand() % 4;
     switch(direction) {
       case 0:{  //from up  to empty tile
         if(empty_row > 0 && empty_row <= 3 && prev_direction != 1){          
-          #ifdef T15_USE_HITORY_REJESTR
+          #ifdef T15_USE_HISTORY_REJESTR
           /*history recording must be before swap_tile, 
           because swap_tile change global variables empty_row, empty_col*/
           move_backward_rejestr.emplace_back(move_rejestr_entry_t(
             empty_row - 1, empty_col, empty_row, empty_col));
-          #endif // T15_USE_HITORY_REJESTR            
+          #endif // T15_USE_HISTORY_REJESTR            
           swap_tile(empty_row - 1, empty_col, empty_row, empty_col);                    
           prev_direction = direction;
         }
@@ -353,10 +436,10 @@ void make_mess_on_board(){
       }
       case 1:{  //from down
         if(empty_row < 3 && empty_row >= 0 && prev_direction != 0){
-          #ifdef T15_USE_HITORY_REJESTR
+          #ifdef T15_USE_HISTORY_REJESTR
           move_backward_rejestr.emplace_back(move_rejestr_entry_t(
             empty_row + 1, empty_col, empty_row, empty_col));   
-          #endif // T15_USE_HITORY_REJESTR            
+          #endif // T15_USE_HISTORY_REJESTR            
           swap_tile(empty_row + 1, empty_col, empty_row, empty_col);
           prev_direction = direction;       
         }
@@ -367,10 +450,10 @@ void make_mess_on_board(){
       }
       case 2:{  //from left
         if(empty_col > 0 && empty_col <= 3 && prev_direction != 3){
-          #ifdef T15_USE_HITORY_REJESTR
+          #ifdef T15_USE_HISTORY_REJESTR
           move_backward_rejestr.emplace_back(move_rejestr_entry_t(
             empty_row, empty_col - 1, empty_row, empty_col));
-          #endif // T15_USE_HITORY_REJESTR            
+          #endif // T15_USE_HISTORY_REJESTR            
           swap_tile(empty_row, empty_col - 1, empty_row, empty_col);
           prev_direction = direction;
         }
@@ -381,10 +464,10 @@ void make_mess_on_board(){
       }
       case 3:{  //from right
         if(empty_col < 3 && empty_col >= 0 && prev_direction != 2){
-          #ifdef T15_USE_HITORY_REJESTR
+          #ifdef T15_USE_HISTORY_REJESTR
           move_backward_rejestr.emplace_back(move_rejestr_entry_t(
             empty_row, empty_col + 1, empty_row, empty_col));
-          #endif// T15_USE_HITORY_REJESTR
+          #endif// T15_USE_HISTORY_REJESTR
           swap_tile(empty_row, empty_col + 1, empty_row, empty_col);
           prev_direction = direction;          
         }
@@ -404,7 +487,9 @@ void make_mess_on_board(){
   create_current_state();
 }
 
+
 void reset_tiles(){
+  img = image.clone();
   for(int row = 0, tile_nr = 0; row < tile_height_n; ++row){
     for(int col = 0; col < tile_width_n; ++col, ++tile_nr){      
       tiles15[row][col].r = Rect(col * tile_width, row * tile_height, tile_width, tile_height);   
@@ -412,16 +497,37 @@ void reset_tiles(){
       tiles15[row][col].t = Mat(img,
         tiles15[row][col].r
       );
+
+      #ifdef T15_TILE_HIGHLIGHT
+      if(tile_highlight_on){
+        draw_highlight(
+          tiles15[row][col],
+          color_neutral
+        );
+      }     
+      #endif // T15_TILE_HIGHLIGHT 
+
       tiles15[row][col].empty = false;
       tiles15[row][col].nr = tile_nr;
     }
   }
   //waitKey(0);
-  current_state = Mat::zeros(img.size(), img.type());
+  current_state = Mat::zeros(image.size(), image.type());
 }
 
+
 int main(int argc, char **argv){
-  CommandLineParser cmd_parser(argc, argv,\
+  CommandLineParser cmd_parser(argc, argv,
+  #ifdef T15_TILE_HIGHLIGHT
+  "\
+  {help h || this message}\
+  {@img | puzzle15p.jpg | puzzle image}\
+  {@hardness | 15 | difficulty level}\
+  {@language | 0 | messages language (0 = eng, 1 = pl)}\
+  {@background_off | 0 | background: turn off = 1, turn on = 0}\
+  {@highlight_tile | 0 | turn on/off tile highlight (on = 1, off = 0)}\
+  ");
+  #else
   "\
   {help h || this message}\
   {@img | puzzle15p.jpg | puzzle image}\
@@ -429,13 +535,14 @@ int main(int argc, char **argv){
   {@language | 0 | messages language (0 = eng, 1 = pl)}\
   {@background_off | 0 | background: turn off = 1, turn on = 0}\
   ");
+  #endif // T15_TILE_HIGHLIGHT
   if(cmd_parser.has("help")){
     cmd_parser.printMessage();
     return EXIT_SUCCESS;
   }
   try{
-    img = imread(cmd_parser.get<string>("@img"), IMREAD_UNCHANGED);
-    if(img.empty()){
+    image = imread(cmd_parser.get<string>("@img"), IMREAD_UNCHANGED);
+    if(image.empty()){
       cerr << endl << info_6[language] << endl;      
     }
   }
@@ -452,11 +559,15 @@ int main(int argc, char **argv){
   background_off = cmd_parser.get<int>("@background_off");
   if(language != 0 && language != 1) language = 1;  
 
-  #ifdef T15_USE_HITORY_REJESTR
+  #ifdef T15_USE_HISTORY_REJESTR
   move_backward_rejestr.resize(hardness + 2);
   move_user_history.resize(hardness * 1.5);
-  #endif // T15_USE_HITORY_REJESTR
+  #endif // T15_USE_HISTORY_REJESTR
   
+  #ifdef T15_TILE_HIGHLIGHT
+  tile_highlight_on = cmd_parser.get<bool>("@highlight_tile");
+  #endif //T15_TILE_HIGHLIGHT
+
   #ifdef DEBUG_T15
   cout << "hardness: " << hardness << endl;
   namedWindow(debugWindow);
@@ -465,21 +576,21 @@ int main(int argc, char **argv){
   srand(time(NULL));
   
   //scaling image  
-  resize(img, img, Size(512,512), INTER_LINEAR);
+  resize(image, image, Size(512,512), INTER_LINEAR);
 
   //cutting image to the tiles    
-  tile_width = img.cols / tile_width_n;
-  tile_height = img.rows / tile_height_n;
+  tile_width = image.cols / tile_width_n;
+  tile_height = image.rows / tile_height_n;
 
   reset_tiles();  
   
   //shadowing background
   if(background_off){
-    background = Mat::ones(img.size(), img.type());
+    background = Mat::ones(image.size(), image.type());
     background += 200;
   }
   else {
-    background = img.clone();  
+    background = image.clone();  
   }
   background += Scalar(-100, -100, -100);
   
@@ -500,10 +611,10 @@ int main(int argc, char **argv){
     
     moves_counter = 0;
 
-    #ifdef T15_USE_HITORY_REJESTR
+    #ifdef T15_USE_HISTORY_REJESTR
     //history_printed = false;
     move_user_history.clear();    
-    #endif //T15_USE_HITORY_REJESTR
+    #endif //T15_USE_HISTORY_REJESTR
     
     //set empty tile
     empty_row = rand() % tile_height_n;
@@ -517,13 +628,13 @@ int main(int argc, char **argv){
     imshow(gameWindowName, current_state);
     do {
       key = waitKey(0);
-      #ifdef T15_USE_HITORY_REJESTR            
+      #ifdef T15_USE_HISTORY_REJESTR            
       if(key == 104 || key == 72) {  // 'h' 'H'
         //cout << "key: " << key << endl;
         //if(!history_printed) 
           print_moves_history();        
       }
-      #endif // T15_USE_HITORY_REJESTR      
+      #endif // T15_USE_HISTORY_REJESTR      
     } while(key != ' ' && key != 27);
     // if(key == ' '){
     //   key = 0;

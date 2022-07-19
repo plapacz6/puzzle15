@@ -5,6 +5,7 @@
 INCLUDE_DIR=/usr/local/include/opencv4/
 
 LIB_DIR=/usr/local/lib/
+#LIB_DIR=./lib/
 #c++1z -> c++17
 CXXC=g++ -std=c++1z 
 CC=gcc
@@ -27,10 +28,21 @@ LIBS_0=-lopencv_calib3d \
 -lopencv_video \
 -ldl
 	
-puzzle15: puzzle15.cc
-	#./export_lib_path.sh  #for application run
-	g++ -g --std=c++1z $< -I$(INCLUDE_DIR) -L$(LIB_DIR) `pkg-config --libs opencv` -o $@
+PUZZLE15_LIB=-lopencv_core \
+-lopencv_highgui \
+-lopencv_imgcodecs \
+-lopencv_imgproc \
+
+# puzzle15l: puzzle15.cc
+# 	#./export_lib_path.sh  #for application run
+# 	#g++ -g --std=c++1z $< -I$(INCLUDE_DIR) -L$(LIB_DIR) `pkg-config --libs opencv` -o $@
+# 	g++ -g --std=c++1z $< -I$(INCLUDE_DIR) -L$(LIB_DIR) $(PUZZLE15_LIB) -o $@
 	
+puzzle15: puzzle15.o	
+	g++ -g -no-pie --std=c++1z $< -L$(LIB_DIR) $(PUZZLE15_LIB) -o $@
+
+puzzle15.o: puzzle15.cc	
+	g++ -g -no-pie --std=c++1z $< -I$(INCLUDE_DIR) -c
 
 .PHONY: clean
 
